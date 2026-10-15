@@ -12,22 +12,18 @@ function saveAlerts() {
 
 const formatMoney = (val) => val.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
-// NOVA FUNÇÃO: Cascata de Ícones. Tenta 4 fontes diferentes até a imagem aparecer.
+// Cascata de Ícones (Tratamento de fallback visual)
 window.handleImageError = function(img, symbol, domain) {
-    // Remove traços para bater com as APIs gringas (ex: BTC-USD vira BTCUSD)
     const cleanSymbol = symbol.replace('-', '');
     
     if (!img.dataset.retry) {
         img.dataset.retry = "1";
-        // Tentativa 2: Banco de dados do Companies Market Cap
         img.src = `https://companiesmarketcap.com/img/company-logos/64/${cleanSymbol}.webp`;
     } else if (img.dataset.retry === "1" && domain && domain !== 'N/A' && domain !== '') {
         img.dataset.retry = "2";
-        // Tentativa 3: Clearbit (Usando o domínio caso o Python tenha conseguido encontrar)
         img.src = `https://logo.clearbit.com/${domain}`;
     } else if (img.dataset.retry !== "3") {
         img.dataset.retry = "3";
-        // Tentativa 4: Avatar com as Iniciais (Garantia de que nunca ficará em branco)
         img.src = `https://ui-avatars.com/api/?name=${symbol}&background=333333&color=ffffff&rounded=true&bold=true&font-size=0.35`;
     }
 };
@@ -58,8 +54,8 @@ async function addTicker() {
         const data = await response.json();
 
         if (data.error) {
-            alert("Erro ao buscar o Ticker. Pode estar incorreto ou sem dados hoje.");
-            btn.innerText = "Adicionar";
+            alert(data.error);
+            btn.innerText = "Adicionar Alerta";
             return;
         }
 
@@ -80,7 +76,8 @@ async function addTicker() {
             high_52w: data.high_52w,
             pe_ratio: data.pe_ratio,
             graham: data.graham,
-            fair_value: data.fair_value,
+            // Armazena a nova chave sugerida na revisão (com fallback para a antiga)
+            analyst_target_mean: data.analyst_target_mean || data.fair_value,
             div_rate: data.div_rate,
             div_date: data.div_date
         };
@@ -89,10 +86,10 @@ async function addTicker() {
         saveAlerts();
         renderTickers();
     } catch (erro) {
-        alert("Erro no servidor Python.");
+        alert("Erro de comunicação com o servidor Python.");
     }
 
-    btn.innerText = "Adicionar";
+    btn.innerText = "Adicionar Alerta";
     document.getElementById('tickerInput').value = '';
     document.getElementById('targetPrice').value = '';
 }
@@ -111,10 +108,9 @@ function renderTickers() {
     list.innerHTML = '';
 
     activeAlerts.forEach(alert => {
-        
-        // Tentativa 1: Financial Modeling Prep (API direta pelo Ticker)
         const cleanSymbol = alert.symbol.replace('-', '');
         const primaryIconUrl = `https://financialmodelingprep.com/image-stock/${cleanSymbol}.png`;
+        const fallbackIcon = `https://ui-avatars.com/api/?name=${alert.symbol}&background=333333&color=ffffff&rounded=true&bold=true&font-size=0.35`;
 
         const card = document.createElement('div');
         card.id = `card-${alert.id}`; 
@@ -129,11 +125,20 @@ function renderTickers() {
             }
         }
 
-        let changeClass = alert.changePercent >= 0 ? 'pct-up' : 'pct-down';
-        let changeSign = alert.changePercent >= 0 ? '+' : '';
+        // NOVIDADE: Tratamento seguro para Variação Diária (evita falha por null)
+        let changeHtml = '';
+        if (alert.changePercent === null || alert.changePercent === undefined || alert.changePercent === 'N/A') {
+            changeHtml = `<span class="pct-change" style="background-color: rgba(255,255,255,0.1); color: var(--text-muted);">N/D</span>`;
+        } else {
+            let changeClass = alert.changePercent >= 0 ? 'pct-up' : 'pct-down';
+            let changeSign = alert.changePercent > 0 ? '+' : '';
+            changeHtml = `<span class="pct-change ${changeClass}">${changeSign}${alert.changePercent.toFixed(2)}%</span>`;
+        }
 
+        // Formatação segura de métricas (Tratamento N/A)
         let grahamStr = (alert.graham && alert.graham !== 'N/A') ? `$${formatMoney(alert.graham)}` : 'N/A';
-        let fairValueStr = (alert.fair_value && alert.fair_value !== 'N/A') ? `$${formatMoney(alert.fair_value)}` : 'N/A';
+        let targetMean = alert.analyst_target_mean || alert.fair_value;
+        let fairValueStr = (targetMean && targetMean !== 'N/A') ? `$${formatMoney(targetMean)}` : 'N/A';
         let peStr = (alert.pe_ratio && alert.pe_ratio !== 'N/A') ? alert.pe_ratio : 'N/A';
         let low52Str = (alert.low_52w && alert.low_52w !== 'N/A') ? formatMoney(alert.low_52w) : 'N/D';
         let high52Str = (alert.high_52w && alert.high_52w !== 'N/A') ? formatMoney(alert.high_52w) : 'N/D';
@@ -148,7 +153,6 @@ function renderTickers() {
         card.innerHTML = `
             <div class="ticker-header">
                 <div style="display: flex; align-items: center; gap: 10px;">
-                    <!-- A MÁGICA DOS ÍCONES ACONTECE NO 'onerror' ABAIXO -->
                     <img src="${primaryIconUrl}" alt="logo" class="ticker-icon" onerror="handleImageError(this, '${alert.symbol}', '${alert.domain}')">
                     <strong>${alert.symbol}</strong>
                 </div>
@@ -158,13 +162,13 @@ function renderTickers() {
             <div class="ticker-body">
                 <div class="price-row">
                     <span class="price">$ ${formatMoney(alert.currentPrice)}</span>
-                    <span class="pct-change ${changeClass}">${changeSign}${alert.changePercent}%</span>
+                    ${changeHtml}
                 </div>
                 
                 <div class="metrics-grid">
                     <div class="metric-item">Graham: <span>${grahamStr}</span></div>
-                    <div class="metric-item">Preço Justo (Analistas): <span style="color: var(--success-color);">${fairValueStr}</span></div>
-                    <div class="metric-item">P/L: <span>${peStr}</span></div>
+                    <div class="metric-item">Preço-alvo médio: <span style="color: var(--success-color);">${fairValueStr}</span></div>
+                    <div class="metric-item">P/L (12m): <span>${peStr}</span></div>
                     <div class="metric-item">52W Range: <span>$${low52Str} - $${high52Str}</span></div>
                     ${divHtml}
                 </div>
@@ -215,6 +219,7 @@ function renderTickers() {
     });
 }
 
+// Rota de consumo leve (atualiza apenas a cotação a cada 30 segundos)
 async function updatePricesBackground() {
     let hasChanges = false;
     for (let alertItem of activeAlerts) {

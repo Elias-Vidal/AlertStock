@@ -4,22 +4,32 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Alertas de Tickers</title>
+    <!-- Fonte Inter para visual de Dashboard Financeiro -->
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 </head>
 <body>
     <div class="container">
-        <h1>Meus Alertas</h1>
+        <div class="app-header">
+            <h1>Painel de Alertas</h1>
+            <p class="subtitle">Monitore seus ativos em tempo real</p>
+        </div>
         
-        <div class="form-group">
-            <input type="text" id="tickerInput" placeholder="Ex: MSFT, TSM" autocomplete="off">
-            <select id="conditionSelect">
+        <!-- Transformado em <form> para permitir o uso da tecla "Enter" no teclado -->
+        <form class="form-group" id="tickerForm" onsubmit="event.preventDefault(); addTicker();">
+            <input type="text" id="tickerInput" placeholder="Ex: MSFT, AXP, BTC-USD" autocomplete="off" required>
+            
+            <select id="conditionSelect" required>
                 <option value="maior">Maior que (>)</option>
                 <option value="menor">Menor que (<)</option>
             </select>
-            <input type="number" id="targetPrice" placeholder="Valor Alvo USD" step="0.01">
-            <button onclick="addTicker()">Adicionar</button>
-        </div>
+            
+            <input type="number" id="targetPrice" placeholder="Valor Alvo (USD)" step="0.01" required>
+            
+            <!-- ID adicionado conforme a exigência do novo JavaScript -->
+            <button type="submit" id="addTickerButton">Adicionar Alerta</button>
+        </form>
 
         <div id="tickersList" class="tickers-grid"></div>
     </div>

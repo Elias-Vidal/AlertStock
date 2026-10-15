@@ -1,107 +1,205 @@
-from flask import Flask, render_template, jsonify
+from datetime import datetime, timezone
+import logging
+import math
+import re
+from urllib.parse import urlparse
+
+from flask import Flask, jsonify, render_template
 import yfinance as yf
-from datetime import datetime
 
 app = Flask(__name__)
+app.logger.setLevel(logging.INFO)
 
-@app.route('/')
-def index():
-    return render_template('index.html')
+SYMBOL_PATTERN = re.compile(r"^[A-Z0-9.^=_-]{1,30}$")
 
-@app.route('/api/ticker/<symbol>')
-def get_ticker_info(symbol):
+def normalize_symbol(symbol):
+    normalized = (symbol or "").strip().upper()
+    return normalized if SYMBOL_PATTERN.fullmatch(normalized) else None
+
+def to_float(value):
     try:
-        symbol_upper = symbol.upper()
+        number = float(value)
+        return number if math.isfinite(number) else None
+    except (TypeError, ValueError, OverflowError):
+        return None
+
+def rounded_or_na(value, decimals=2):
+    number = to_float(value)
+    return round(number, decimals) if number is not None else "N/A"
+
+def fast_info_number(ticker, key):
+    try:
+        return to_float(ticker.fast_info.get(key))
+    except Exception:
+        return None
+
+def get_current_price(ticker, history=None):
+    price = fast_info_number(ticker, "last_price")
+    if price is not None and price > 0:
+        return price
+
+    try:
+        hist = history
+        if hist is None:
+            hist = ticker.history(period="5d", interval="1d", auto_adjust=False, timeout=10)
+
+        if hist is None or hist.empty or "Close" not in hist.columns:
+            return None
+
+        closes = hist["Close"].dropna()
+        if closes.empty:
+            return None
+
+        fallback_price = to_float(closes.iloc[-1])
+        if fallback_price is not None and fallback_price > 0:
+            return fallback_price
+
+        return None
+    except Exception:
+        return None
+
+def get_domain(symbol, info):
+    if symbol == "BTC-USD":
+        return "bitcoin.org"
+    if symbol == "BRL=X":
+        return "bcb.gov.br"
+
+    website = str(info.get("website") or "").strip()
+    if not website:
+        return ""
+
+    parsed = urlparse(website if "://" in website else f"https://{website}")
+    hostname = parsed.hostname or ""
+
+    if hostname.lower().startswith("www."):
+        hostname = hostname[4:]
+
+    return hostname.lower()
+
+@app.route("/")
+def index():
+    return render_template("index.html")
+
+@app.route("/api/ticker/<symbol>")
+def get_ticker_info(symbol):
+    symbol_upper = normalize_symbol(symbol)
+    if not symbol_upper:
+        return jsonify({"error": "Símbolo inválido"}), 400
+
+    try:
         ticker = yf.Ticker(symbol_upper)
-        
-        hist = ticker.history(period='1mo').dropna(subset=['Close'])
+        hist = ticker.history(period="1mo", interval="1d", auto_adjust=False, timeout=10)
+
+        if hist is None or hist.empty or "Close" not in hist.columns:
+            return jsonify({"error": "Nenhum histórico encontrado para esse símbolo"}), 404
+
+        hist = hist.dropna(subset=["Close"])
         if hist.empty:
-            return jsonify({"error": "Ticker não encontrado"}), 404
-            
-        info = ticker.info
-        
+            return jsonify({"error": "Nenhum preço válido encontrado para esse símbolo"}), 404
+
         try:
-            current_price = float(ticker.fast_info.last_price)
-        except:
-            current_price = float(hist['Close'].iloc[-1])
-            
-        previous_close = float(hist['Close'].iloc[-2]) if len(hist) > 1 else current_price
-        change_percent = ((current_price - previous_close) / previous_close) * 100
-        
-        prices_history = [round(float(price), 2) for price in hist['Close'].tolist()]
-        dates_history = [d.strftime('%d/%m') for d in hist.index]
-        
-        domain = ""
-        if symbol_upper == 'BTC-USD': domain = 'bitcoin.org'
-        elif symbol_upper == 'BRL=X': domain = 'bcb.gov.br'
-        else:
-            website = info.get('website', '')
-            if website:
-                domain = website.replace('https://', '').replace('http://', '').replace('www.', '').split('/')[0]
-            else:
-                short_name = info.get('shortName', '')
-                if short_name:
-                    primeira_palavra = short_name.split()[0].lower().replace(',', '').replace('.', '')
-                    domain = f"{primeira_palavra}.com"
+            info = ticker.info or {}
+        except Exception:
+            info = {}
 
-        # LÓGICA DE GRAHAM
-        eps = info.get('trailingEps')
-        bvps = info.get('bookValue')
+        current_price = get_current_price(ticker, history=hist)
+        if current_price is None:
+            return jsonify({"error": "Não foi possível obter uma cotação válida"}), 502
+
+        previous_close = fast_info_number(ticker, "previous_close")
+        if previous_close is None or previous_close <= 0:
+            closes = hist["Close"].dropna()
+            previous_close = to_float(closes.iloc[-2]) if len(closes) > 1 else None
+
+        if previous_close is not None and previous_close > 0:
+            change_percent = round(((current_price - previous_close) / previous_close) * 100, 2)
+        else:
+            change_percent = None
+
+        prices_history = [round(float(price), 2) for price in hist["Close"].tolist()]
+        dates_history = [date.strftime("%d/%m") for date in hist.index]
+
+        eps = to_float(info.get("trailingEps"))
+        bvps = to_float(info.get("bookValue"))
         graham = "N/A"
-        if eps is not None and bvps is not None:
-            if float(eps) > 0 and float(bvps) > 0:
-                graham = round((22.5 * float(eps) * float(bvps)) ** 0.5, 2)
+        if eps is not None and bvps is not None and eps > 0 and bvps > 0:
+            graham = round(math.sqrt(22.5 * eps * bvps), 2)
 
-        # LÓGICA DO PREÇO JUSTO (Consenso FCD/Múltiplos dos Analistas)
-        fair_value = info.get('targetMeanPrice', 'N/A')
-        if fair_value != 'N/A' and fair_value is not None:
-            fair_value = round(float(fair_value), 2)
-        else:
-            fair_value = 'N/A'
+        analyst_target_mean = rounded_or_na(info.get("targetMeanPrice"))
+        low_52w = rounded_or_na(info.get("fiftyTwoWeekLow"))
+        high_52w = rounded_or_na(info.get("fiftyTwoWeekHigh"))
+        pe_ratio = rounded_or_na(info.get("trailingPE"))
 
-        low_52w = info.get('fiftyTwoWeekLow', 'N/A')
-        high_52w = info.get('fiftyTwoWeekHigh', 'N/A')
-        pe_ratio = info.get('trailingPE', 'N/A')
+        dividend_rate_number = to_float(info.get("dividendRate"))
+        div_rate = round(dividend_rate_number, 2) if dividend_rate_number is not None else "N/A"
 
-        if low_52w != 'N/A': low_52w = round(float(low_52w), 2)
-        if high_52w != 'N/A': high_52w = round(float(high_52w), 2)
-        if pe_ratio != 'N/A': pe_ratio = round(float(pe_ratio), 2)
-
-        div_rate = info.get('dividendRate', 'N/A')
-        div_date_raw = info.get('exDividendDate')
-        div_date = 'N/A'
-        if div_date_raw is not None and str(div_date_raw).isdigit():
-            div_date = datetime.fromtimestamp(div_date_raw).strftime('%d/%m/%Y')
+        div_date = "N/A"
+        div_timestamp = to_float(info.get("exDividendDate"))
+        if div_timestamp is not None and div_timestamp > 0:
+            try:
+                div_date = datetime.fromtimestamp(div_timestamp, tz=timezone.utc).strftime("%d/%m/%Y")
+            except (OverflowError, OSError, ValueError):
+                pass
 
         return jsonify({
             "symbol": symbol_upper,
-            "price": current_price,
-            "change_percent": round(change_percent, 2),
-            "domain": domain,
+            "price": round(current_price, 4),
+            "change_percent": change_percent,
+            "domain": get_domain(symbol_upper, info),
+            "currency": info.get("currency", "USD"),
             "history": prices_history,
             "dates": dates_history,
             "low_52w": low_52w,
             "high_52w": high_52w,
             "pe_ratio": pe_ratio,
             "graham": graham,
-            "fair_value": fair_value, # Enviando o Preço Justo para a tela
+            "fair_value": analyst_target_mean,
+            "analyst_target_mean": analyst_target_mean,
             "div_rate": div_rate,
-            "div_date": div_date
+            "div_date": div_date,
         })
-    except Exception as e:
-        return jsonify({"error": str(e)}), 500
 
-@app.route('/api/price/<symbol>')
+    except Exception:
+        app.logger.exception("Erro ao consultar o ticker %s", symbol_upper)
+        return jsonify({"error": "Falha ao consultar os dados do mercado. Tente novamente."}), 502
+
+@app.route("/api/price/<symbol>")
 def get_price_only(symbol):
-    try:
-        ticker = yf.Ticker(symbol.upper())
-        try:
-            price = float(ticker.fast_info.last_price)
-        except:
-            price = float(ticker.history(period='1d')['Close'].iloc[-1])
-        return jsonify({"price": price})
-    except:
-        return jsonify({"error": "Erro"}), 500
+    symbol_upper = normalize_symbol(symbol)
+    if not symbol_upper:
+        return jsonify({"error": "Símbolo inválido"}), 400
 
-if __name__ == '__main__':
-    app.run(debug=True, port=5000)
+    try:
+        ticker = yf.Ticker(symbol_upper)
+        price = get_current_price(ticker)
+
+        if price is None:
+            return jsonify({"error": "Não foi possível obter uma cotação válida"}), 502
+            
+        history = ticker.history(period="5d", interval="1d", auto_adjust=False, timeout=10)
+        previous_close = to_float(ticker.fast_info.get("previous_close"))
+        
+        if previous_close is None or previous_close <= 0:
+            closes = history["Close"].dropna() if not history.empty else []
+            if len(closes) > 1:
+                previous_close = to_float(closes.iloc[-2])
+                
+        change_percent = (
+            round(((price - previous_close) / previous_close) * 100, 2)
+            if previous_close is not None and previous_close > 0
+            else None
+        )
+
+        return jsonify({
+            "symbol": symbol_upper,
+            "price": round(price, 4),
+            "change_percent": change_percent,
+            "currency": ticker.info.get("currency", "USD"),
+        })
+
+    except Exception:
+        app.logger.exception("Erro ao consultar o preço de %s", symbol_upper)
+        return jsonify({"error": "Falha ao consultar a cotação. Tente novamente."}), 502
+
+if __name__ == "__main__":
+    app.run(debug=False, port=5000)
