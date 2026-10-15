@@ -1,0 +1,30 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Alertas de Tickers</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+</head>
+<body>
+    <div class="container">
+        <h1>Meus Alertas</h1>
+        
+        <div class="form-group">
+            <input type="text" id="tickerInput" placeholder="Ex: MSFT, TSM" autocomplete="off">
+            <select id="conditionSelect">
+                <option value="maior">Maior que (>)</option>
+                <option value="menor">Menor que (<)</option>
+            </select>
+            <input type="number" id="targetPrice" placeholder="Valor Alvo USD" step="0.01">
+            <button onclick="addTicker()">Adicionar</button>
+        </div>
+
+        <div id="tickersList" class="tickers-grid"></div>
+    </div>
+
+    <audio id="alertSound" src="{{ url_for('static', filename='alerta.mp3') }}" preload="auto"></audio>
+    <script src="{{ url_for('static', filename='script.js') }}"></script>
+</body>
+</html>

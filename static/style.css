@@ -1,0 +1,227 @@
+:root {
+    --bg-color: #121212;
+    --card-bg: #1e1e1e;
+    --text-color: #e0e0e0;
+    --accent-color: #bb86fc;
+    --danger-color: #cf6679;
+    --success-color: #03dac6;
+}
+
+body {
+    background-color: var(--bg-color);
+    color: var(--text-color);
+    font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+    margin: 0;
+    padding: 20px;
+}
+
+.container {
+    max-width: 900px;
+    margin: 0 auto;
+}
+
+.form-group {
+    background-color: var(--card-bg);
+    padding: 20px;
+    border-radius: 8px;
+    display: flex;
+    flex-wrap: wrap; /* Nova linha: impede que o menu fique espremido em telas pequenas */
+    gap: 10px;
+    margin-bottom: 30px;
+}
+
+input, select, button {
+    padding: 10px;
+    border-radius: 4px;
+    border: none;
+    background-color: #2c2c2c;
+    color: var(--text-color);
+}
+
+button {
+    background-color: var(--accent-color);
+    color: #000;
+    font-weight: bold;
+    cursor: pointer;
+    transition: 0.2s;
+}
+
+button:hover {
+    opacity: 0.8;
+}
+
+.tickers-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+    gap: 20px;
+}
+
+.ticker-card {
+    background-color: var(--card-bg);
+    padding: 20px;
+    border-radius: 12px;
+    border-left: 4px solid #333;
+    transition: 0.3s;
+    box-shadow: 0 4px 6px rgba(0,0,0,0.3);
+}
+
+.ticker-card.triggered {
+    border-left-color: var(--success-color);
+    box-shadow: 0 0 20px rgba(3, 218, 198, 0.2);
+}
+
+.ticker-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 15px;
+}
+
+.ticker-icon {
+    width: 36px;
+    height: 36px;
+    border-radius: 50%;
+    object-fit: contain;
+    background-color: #fff;
+    padding: 2px;
+}
+
+.btn-remove {
+    background-color: transparent;
+    color: var(--text-color);
+    opacity: 0.5;
+    padding: 5px 10px;
+}
+
+.btn-remove:hover {
+    color: var(--danger-color);
+    opacity: 1;
+    background-color: transparent;
+}
+
+.price-row {
+    display: flex;
+    align-items: baseline;
+    gap: 10px;
+    margin-bottom: 5px;
+}
+
+.price {
+    font-size: 1.5em;
+    font-weight: bold;
+    color: #fff;
+}
+
+.pct-change {
+    font-size: 0.9em;
+    font-weight: bold;
+    padding: 2px 6px;
+    border-radius: 4px;
+}
+
+.pct-up {
+    background-color: rgba(3, 218, 198, 0.1);
+    color: var(--success-color);
+}
+
+.pct-down {
+    background-color: rgba(207, 102, 121, 0.1);
+    color: var(--danger-color);
+}
+
+.low-price, .alert-info {
+    font-size: 0.85em;
+    color: #999;
+    margin: 5px 0;
+}
+
+.chart-container {
+    position: relative;
+    height: 150px;
+    width: 100%;
+    margin-top: 20px;
+}
+
+/* Nova linha: Garante que o gráfico nunca ultrapasse ou quebre a caixa dele */
+.chart-container canvas {
+    width: 100% !important;
+    height: 100% !important;
+}
+
+.trigger-msg {
+    margin-top: 15px;
+    padding: 10px;
+    background-color: var(--success-color);
+    color: #000;
+    text-align: center;
+    font-weight: bold;
+    border-radius: 6px;
+    animation: pulse 1.5s infinite;
+}
+
+@keyframes pulse {
+    0% { transform: scale(1); opacity: 1; }
+    50% { transform: scale(1.02); opacity: 0.9; }
+    100% { transform: scale(1); opacity: 1; }
+}
+
+/* --- Novo Grid de Métricas Financeiras --- */
+.metrics-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 12px;
+    background-color: rgba(0, 0, 0, 0.25);
+    padding: 15px;
+    border-radius: 8px;
+    margin: 15px 0;
+}
+
+.metric-item {
+    font-size: 0.8em;
+    color: #999;
+    display: flex;
+    flex-direction: column;
+}
+
+.metric-item span {
+    font-size: 1.25em;
+    font-weight: bold;
+    color: #fff;
+    margin-top: 3px;
+}
+
+.metric-item small {
+    font-size: 0.7em;
+    font-weight: normal;
+    color: #bbb;
+}
+/* ----------------------------------------- */
+
+/* --- Novo Histórico de Disparo (Carimbo) --- */
+.trigger-history {
+    margin-top: 15px;
+    padding: 12px;
+    background-color: rgba(3, 218, 198, 0.15);
+    border: 1px solid var(--success-color);
+    color: #e0e0e0;
+    text-align: center;
+    font-size: 0.9em;
+    line-height: 1.5;
+    border-radius: 6px;
+    box-shadow: 0 0 15px rgba(3, 218, 198, 0.2);
+    animation: fadeIn 0.5s ease-out;
+}
+
+.trigger-history strong {
+    color: var(--success-color);
+    font-size: 1.2em;
+    display: block;
+    margin-bottom: 5px;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+}
+
+@keyframes fadeIn {
+    from { opacity: 0; transform: translateY(-10px); }
+    to { opacity: 1; transform: translateY(0); }
+}
